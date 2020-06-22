@@ -30,3 +30,11 @@
   color: #42b983;
 }
 </style>
+
+<style lang="scss">
+  @import '@/path/to/variables.scss';
+
+  .custom-class {
+    border-radius: $border-radius-root;
+  }
+</style>
