@@ -1,0 +1,20 @@
+{
+  "name": "css",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seongpil0948/Css.git"
+  },
+  "author": "sp",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/seongpil0948/Css/issues"
+  },
+  "homepage": "https://github.com/seongpil0948/Css#readme",
+  "dependencies": {}
+}
