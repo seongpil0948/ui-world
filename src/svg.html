@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scalable Vector Graphic</title>
+    <style>
+        /* flex containers */
+        .cont { 
+            display: inline-flex;  
+            justify-content: center; /* main axis (변경을 위해서는 flex-direction 을 사용 해야한다.) */
+            align-content: center; /* cross axis */
+            flex-wrap: wrap-reverse ; /* Items를 여러 줄로 묶음 */
+            width: 100vw; height: 100vh;
+            background-color:snow; 
+        }
+    </style>
+</head>
+<body>
+    <section class="cont one">
+        <svg version="1.1" baseProfile="full" width="30%" height="30%"  xmlns="http://www.w3.org/2000/svg">    
+            <rect width="300px" height="200" fill="gray" />
+            <circle cx="150" cy="100" r="80" fill="green" />
+            <text x="150" y="125" font-size="60" text-anchor="middle" fill="white">SVG</text>
+        </svg>
+        <!-- 
+            path 의 모양은 d로서 결정된다.
+            대문자: 뒤따르는 좌표는 absolute
+            소문자: 뒤따르는 좌표는 relative
+            m: move to
+            l: Line To(선 그리기) H: 가로, V: 세로
+            Z: Close Path(패스 닫기) 명령어를 통해 쉽게 패스를 마무리할 수 있다.
+         -->
+        <svg version="1.1" baseProfile="full" width="30%" height="60%"  xmlns="http://www.w3.org/2000/svg">
+
+            <!-- (10, 10) 에서 시작하여 수평, 수직으로 80 포인트이동  -->
+            <path d="M10 10 h 80 v 80 h -80 Z" fill="transparent" stroke="black"/>
+
+            <!-- 점 -->
+            <circle cx="10" cy="10" r="2" fill="red"/>
+            <circle cx="90" cy="90" r="2" fill="red"/>
+            <circle cx="90" cy="10" r="2" fill="red"/>
+            <circle cx="10" cy="90" r="2" fill="red"/>
+        </svg>
+    </section>
+</body>
+</html>

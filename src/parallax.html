@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style lang="scss">
+        .card {
+            font-size: large;
+            border: 3px solid;
+            width: 140px;
+            display: none;
+        }
+        .scene {
+            height: 100vh;
+            overflow: hidden;
+            background-repeat: no-repeat;
+            background-size: cover;         
+            background-attachment: fixed;
+
+        }
+        .scene.one {
+            background-image: url(https://www.dropbox.com/s/g5590ee19mteeig/heic0910e.jpg?raw=1);
+        }
+        .scene.two {
+            background-image: url(https://www.dropbox.com/s/9dxws73s6pp152z/heic1501a.jpg?raw=1);
+        }
+        .scene.three {
+            background-image: url(https://www.dropbox.com/s/9f8xk48drwsdl3j/heic1608a.jpg?raw=1);
+        }        
+    </style>
+    <title>Document</title>
+</head>
+<body>
+    <script src="parallax.js"></script>
+    <section class="scene one">
+        <header>
+          <h1>Lorem ipsum dolor sit amet.</h1> Lorem ipsum dolor sit amet, consectetur adipisicing elit. Totam suscipit sint ab beatae nihi
+        </header>
+      </section>
+      <section class="scene two">
+        <header>
+          <h1>Lorem ipsum dolor sit amet.</h1> Lorem ipsum dolor sit amet, consectetur adipisicing elit. Totam suscipit sint ab beatae nihi
+        </header>
+      </section>
+      <section class="scene three">
+        <header>
+          <h1>Lorem ipsum dolor sit amet.</h1> Lorem ipsum dolor sit amet, consectetur adipisicing elit. Totam suscipit sint ab beatae nihi
+        </header>
+      </section>
+</body>
+
+</html>
+<!-- https://developer.mozilla.org/ko/docs/Web/CSS/background  https://codepen.io/matchboxhero/pen/LzdgOv?editors=1100 https://ldrerin.tistory.com/m/397 -->
