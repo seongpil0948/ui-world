@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+  </body>
+  <script>
+    // 단위 원의 반지름
+    const radius = 50;
+
+    // 단위 원을 그릴 canvas 요소를 가져옴
+    const canvas = document.getElementById("canvas");
+
+    // canvas의 너비와 높이를 설정
+    canvas.width = 200;
+    canvas.height = 200;
+
+    // canvas의 2d 컨텍스트를 가져옴
+    const ctx = canvas.getContext("2d");
+
+    // canvas의 중심을 원점으로 이동
+    ctx.translate(100, 100);
+
+    // 원을 그리기 위한 경로를 시작
+    ctx.beginPath();
+
+    // 원의 중심에서 반지름만큼 이동한 점에서 시작
+    ctx.moveTo(radius, 0);
+
+    // 반시계 방향으로 원을 그림
+    ctx.arc(10, 20, radius, 0, Math.PI * 2, true);
+
+    // 경로를 닫음
+    ctx.closePath();
+
+    // 원을 채우기 위한 색상을 설정
+    ctx.fillStyle = "blue";
+
+    // 원을 채움
+    ctx.fill();
+
+    // canvas 요소를 html 문서에 마운트함
+    document.body.appendChild(canvas);
+  </script>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+  </body>
+  <script>
+    // 삼각함수를 사용해서 원을 그리는 js 코드를 작성하려면 다음과 같은 방법을 사용할 수 있습니다.
+
+    // 원의 중심 좌표와 반지름을 정합니다.
+    // 원의 둘레에 해당하는 각도를 일정한 간격으로 나눕니다. 예를 들어, 360도를 10도씩 나눈다면 총 36개의 점이 필요합니다.
+    // 각 점의 x좌표와 y좌표를 삼각함수를 이용하여 계산합니다. 예를 들어, 각도가 θ일 때, x좌표는 중심의 x좌표에 반지름과 코사인 θ의 곱을 더한 값이고, y좌표는 중심의 y좌표에 반지름과 사인 θ의 곱을 더한 값입니다.
+    // 각 점을 선으로 연결하여 원을 그립니다.
+    // 다음은 이 방법을 구현한 js 코드의 예시입니다.
+    // 원의 중심 좌표와 반지름
+    const centerX = 100;
+    const centerY = 100;
+    const radius = 50;
+
+    // 원의 둘레에 해당하는 각도를 10도씩 나누기
+    const angleStep = 10;
+
+    // canvas 요소를 가져오기
+    const canvas = document.getElementById("canvas");
+
+    // canvas의 너비와 높이를 설정
+    canvas.width = 200;
+    canvas.height = 200;
+
+    // canvas의 2d 컨텍스트를 가져오기
+    const ctx = canvas.getContext("2d");
+
+    // 원을 그리기 위한 경로를 시작
+    ctx.beginPath();
+
+    // 첫 번째 점의 좌표 계산
+    let angle = 0; // 각도는 0도부터 시작
+    // x좌표는 중심의 x좌표에 반지름과 코사인 θ의 곱을 더한 값
+    let x = centerX + radius * Math.cos((angle * Math.PI) / 180);
+    // y좌표는 중심의 y좌표에 반지름과 사인 θ의 곱을 더한 값
+    let y = centerY + radius * Math.sin((angle * Math.PI) / 180);
+
+    // 첫 번째 점에서 경로를 시작
+    ctx.moveTo(x, y);
+
+    // 다음 점들의 좌표를 계산하고 선으로 연결하기
+    while (angle < 360) {
+      // 각도를 10도씩 증가시키기
+      angle += angleStep;
+
+      // 다음 점의 좌표 계산
+      x = centerX + radius * Math.cos((angle * Math.PI) / 180);
+      y = centerY + radius * Math.sin((angle * Math.PI) / 180);
+
+      // 선으로 연결하기
+      ctx.lineTo(x, y);
+    }
+
+    // 경로를 닫기
+    ctx.closePath();
+
+    // 원을 채우기 위한 색상을 설정
+    ctx.fillStyle = "red";
+
+    // 원을 채우기
+    ctx.fill();
+
+    // canvas 요소를 html 문서에 마운트함
+    document.body.appendChild(canvas);
+  </script>
+</html>

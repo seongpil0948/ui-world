@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <div id="big-circle" class="circle big">
+      <div class="circle one"></div>
+      <div class="circle two"></div>
+      <div class="circle three"></div>
+      <div class="circle four"></div>
+      <div class="circle five"></div>
+      <div class="circle six"></div>
+    </div>
+
+    <style>
+      .circle {
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        background-color: red;
+        display: inline-block;
+        position: absolute;
+      }
+
+      .circle.big {
+        width: 150px;
+        height: 150px;
+        background-color: blue;
+        margin: 100px;
+      }
+
+      .one {
+        left: -25px;
+        top: -25px;
+      }
+
+      .two {
+        top: -60px;
+        left: 50px;
+      }
+
+      .three {
+        right: -25px;
+        top: -25px;
+      }
+
+      .four {
+        left: -25px;
+        bottom: -25px;
+      }
+
+      .five {
+        bottom: -60px;
+        left: 50px;
+      }
+
+      .six {
+        right: -25px;
+        bottom: -25px;
+      }
+    </style>
+  </body>
+</html>
