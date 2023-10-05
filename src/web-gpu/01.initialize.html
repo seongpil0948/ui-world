@@ -1,0 +1,104 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>01: Canvas Setup - WebGPU Life</title>
+  </head>
+
+  <body>
+    <canvas width="512" height="512"></canvas>
+    <script type="module">
+      const canvas = document.querySelector("canvas");
+
+      // WebGPU device initialization
+      // WebGPU의 진입점 역할을 하는 navigator.gpu 객체가 있는지 확인
+      console.log("gpu: ", navigator.gpu);
+      if (!navigator.gpu) {
+        throw new Error("WebGPU not supported on this browser.");
+      }
+      // 기기의 특정 GPU 하드웨어를 WebGPU가 표현한 것을 adapter라고 함
+      // https://gpuweb.github.io/gpuweb/#adapter-selection
+      const adapter = await navigator.gpu.requestAdapter();
+      console.log("adapter: ", adapter);
+      if (!adapter) {
+        // 사용자의 브라우저가 WebGPU를 지원하지만 GPU 하드웨어에
+        // WebGPU를 사용하는 데 필요한 모든 기능이 없는 경우 발생할 수 있습니다.
+        throw new Error("No appropriate GPUAdapter found.");
+      }
+      // https://gpuweb.github.io/gpuweb/#gpudevice
+      // 기기는 GPU와의 대부분의 상호작용이 발생하는 기본 인터페이스입니다.
+      // https://gpuweb.github.io/gpuweb/#gpudevicedescriptor
+      const device = await adapter.requestDevice();
+      console.log("device: ", device);
+      // Canvas configuration
+      // https://gpuweb.github.io/gpuweb/#canvas-context
+      const context = canvas.getContext("webgpu");
+      console.log("context: ", context);
+      //  WebGPU가 이미지 데이터를 저장하는 데 사용하는 객체이며,
+      //  각 텍스처에는 해당 데이터가 메모리에 배치되는 방식을 GPU에 알리는 형식이 있습니다
+      //  기기 유형에 따라 텍스처 형식이 다를 때 성능이 가장 우수하며,
+      //  기기의 기본 형식을 사용하지 않으면 이미지가 페이지의 일부로 표시되기 전에
+      //  백그라운드에서 추가 메모리 사본이 생성될 수 있습니다.
+      //  WebGPU에서 캔버스에 사용할 형식을 알려주는 메서드
+      //  https://gpuweb.github.io/gpuweb/#dom-gpu-getpreferredcanvasformat
+      const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+      console.log("canvasFormat: ", canvasFormat);
+      // https://gpuweb.github.io/gpuweb/#dom-gpucanvascontext-configure
+      context.configure({
+        device: device,
+        format: canvasFormat,
+      });
+
+      // https://gpuweb.github.io/gpuweb/#gpucommandencoder
+      const encoder = device.createCommandEncoder();
+      console.log("encoder: ", encoder);
+      /* 
+      렌더 패스는 WebGPU의 모든 그리기 작업이 발생하는 것을 말합니다. 
+      각 컨트롤은 beginRenderPass() 호출로 시작하며, 
+      이 메서드는 실행된 그리기 명령어의 출력을 수신하는 텍스처를 정의합니다. 
+      고급 사용에서는 렌더링된 도형의 깊이를 저장하거나 앤티앨리어싱을 제공하는 등 
+      다양한 목적으로 첨부파일이라고 하는 여러 텍스처를 제공할 수 있습니다. 
+      하지만 이 앱에는 하나만 필요합니다.
+      context.getCurrentTexture()를 호출하여 이전에 만든 캔버스 컨텍스트에서 텍스처를 가져옵니다. 
+      이 메서드는 캔버스의 width 및 height 속성과 일치하는 픽셀 너비 및 높이, 
+      context.configure()를 호출할 때 지정된 format를 포함하는 텍스처를 반환합니다.      
+    */
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          // Clear the canvas with a render pass
+          {
+            // 텍스처는 colorAttachment의 view 속성으로 제공됩니다.
+            // 렌더 패스를 사용하려면 GPUTexture 대신 GPUTextureView를 제공해야 합니다.
+            //  텍스처에 인수가 없는 createView()를 호출하여 렌더 패스에서 전체 텍스처를 사용하려고 한다는 것을 나타냅니다.
+            view: context.getCurrentTexture().createView(),
+            // 이면 렌더 패스가 시작될 때 텍스처를 지울 것임을 나타냅니다.
+            loadOp: "clear",
+            // 실행할 때 어떤 색상을 사용해야 할지 렌더 패스에 지시합니다.
+            /* 
+            { r: 1, g: 0, b: 0, a: 1 }는 밝은 빨간색입니다.
+            { r: 1, g: 0, b: 1, a: 1 }는 밝은 보라색입니다.
+            { r: 0, g: 0.3, b: 0, a: 1 }는 진한 녹색입니다.
+            { r: 0.5, g: 0.5, b: 0.5, a: 1 }는 중간 회색입니다.
+            { r: 0, g: 0, b: 0, a: 0 }는 기본적으로 투명한 검은색입니다.
+          */
+            // clearValue: { r: 0, g: 0, b: 0.4, a: 1.0 },
+            clearValue: [0, 0.5, 0.7, 1],
+            // 렌더 패스가 완료되면 렌더 패스 중에 그리는 결과가 텍스처에 저장된다는 의미입니다.
+            storeOp: "store",
+          },
+        ],
+      });
+      console.log("pass: ", pass);
+      // 바로 뒤에 다음 호출을 추가하여 렌더 패스를 종료합니다.
+      pass.end();
+      //  브라우저에서 컨텍스트의 현재 텍스처가 변경되었음을 확인한 다음
+      //  캔버스를 업데이트하여 해당 텍스처를 이미지로 표시합니다.
+      //  캔버스 콘텐츠를 다시 업데이트하려면 새 명령어 버퍼를 기록하고 제출하여
+      //  context.getCurrentTexture()를 다시 호출하여 렌더 패스의 새 텍스처를 가져와야 합니다.
+      device.queue.submit([
+        // GPUCommandBuffer를 만들려면 명령어 인코더에서 finish()를 호출합니다.
+        // 명령어 버퍼는 기록된 명령어의 불투명 핸들입니다.
+        encoder.finish(),
+      ]);
+    </script>
+  </body>
+</html>
