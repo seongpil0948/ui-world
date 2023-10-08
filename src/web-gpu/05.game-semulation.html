@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+
+<html>
+  <!--
+https://codelabs.developers.google.com/your-first-webgpu-app?hl=ko#3 
+GPU는 예측 가능한 효율적인 방식으로 쉽게 처리할 수 있도록 훌륭한 수학적 속성이 많기 때문에 거의 
+삼각형으로만 작동합니다. GPU로 그리는 대부분의 내용은 GPU로 그릴 수 있도록 삼각형으로 나눠야 하며, 
+이러한 삼각형은 모서리로 정의해야 합니다.    
+정점은한 점을 정의하는 X, Y, (3D 콘텐츠) Z 값으로 정의됩니다. 
+https://en.wikipedia.org/wiki/Cartesian_coordinate_system
+(-1, -1)은 항상 왼쪽 하단이며 (1, 1)은 항상 오른쪽 상단입니다. 이를 클립 공간이라고 합니다.
+
+GPU는 꼭짓점 셰이더라고 하는 작은 프로그램을 사용하여 꼭짓점을 
+클립 공간으로 변환하는 데 필요한 수학과 꼭짓점을 그리는 데 필요한 기타 계산을 수행합니다.
+GPU는 변환된 꼭짓점에 의해 생성된 모든 삼각형을 가져와 화면에 그리는 데 필요한 픽셀을 결정합니다.
+GPU는 프래그먼트 셰이더라고 하는 작은 프로그램을 사용하여 픽셀의 색상을 결정합니다.
+
+결국 GPU가 그리는 모든 것은 클립 공간의 삼각형일 뿐입니다.
+
+-->
+  <head>
+    <meta charset="utf-8" />
+    <title>05: Game Simulation - WebGPU Life</title>
+  </head>
+  <body>
+    <canvas width="512" height="512"></canvas>
+    <script type="module">
+      const GRID_SIZE = 32;
+      const UPDATE_INTERVAL = 250;
+      const WORKGROUP_SIZE = 8;
+
+      const canvas = document.querySelector("canvas");
+      // WebGPU device initialization
+      // WebGPU의 진입점 역할을 하는 navigator.gpu 객체가 있는지 확인
+      if (!navigator.gpu) {
+        throw new Error("WebGPU not supported on this browser.");
+      }
+      // 기기의 특정 GPU 하드웨어를 WebGPU가 표현한 것을 adapter라고 함
+      // https://gpuweb.github.io/gpuweb/#adapter-selection
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        // 사용자의 브라우저가 WebGPU를 지원하지만 GPU 하드웨어에
+        // WebGPU를 사용하는 데 필요한 모든 기능이 없는 경우 발생할 수 있습니다.
+        throw new Error("No appropriate GPUAdapter found.");
+      }
+      // https://gpuweb.github.io/gpuweb/#gpudevice
+      // 기기는 GPU와의 대부분의 상호작용이 발생하는 기본 인터페이스입니다.
+      // https://gpuweb.github.io/gpuweb/#gpudevicedescriptor
+      const device = await adapter.requestDevice();
+
+      // Canvas configuration
+      // https://gpuweb.github.io/gpuweb/#canvas-context
+      const context = canvas.getContext("webgpu");
+      //  WebGPU가 이미지 데이터를 저장하는 데 사용하는 객체이며,
+      //  각 텍스처에는 해당 데이터가 메모리에 배치되는 방식을 GPU에 알리는 형식이 있습니다
+      //  기기 유형에 따라 텍스처 형식이 다를 때 성능이 가장 우수하며,
+      //  기기의 기본 형식을 사용하지 않으면 이미지가 페이지의 일부로 표시되기 전에
+      //  백그라운드에서 추가 메모리 사본이 생성될 수 있습니다.
+      //  WebGPU에서 캔버스에 사용할 형식을 알려주는 메서드
+      //  https://gpuweb.github.io/gpuweb/#dom-gpu-getpreferredcanvasformat
+      const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device: device,
+        format: canvasFormat,
+      });
+
+      // Create a buffer with the vertices for a single cell.
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypedArray
+      // TypedArray는 연속된 메모리 블록을 할당하고 시리즈의 각 요소를 특정 데이터 유형으로 해석할 수 있게 하는 자바스크립트 객체 그룹입니다.
+      // 예를 들어 Uint8Array에서 배열의 각 요소는 서명되지 않은 단일 바이트입니다.
+      // TypedArray는 메모리 레이아웃에 민감한 API (예: WebAssembly, WebAudio, WebGPU)와 데이터를 주고받을 때 유용합니다.
+      // 다이어그램의 모든 꼭짓점 위치를 포함하는 배열을 만듭니다.
+      const vertices = new Float32Array([
+        //  모든 값 쌍이 한 꼭짓점의 X 및 Y 좌표를 구성
+        -0.8, // x,y = triangle 1
+        -0.8,
+        0.8, // x,y = triangle 2
+        -0.8,
+        0.8,
+        0.8,
+        -0.8,
+        -0.8,
+        0.8,
+        0.8,
+        -0.8,
+        0.8,
+      ]);
+
+      /*
+      GPU에는 렌더링에 고도로 최적화된 자체 메모리가 있는 경우가 많으므로,
+      GPU가 사용하는 동안 사용할 데이터는 해당 메모리에 배치되어야 합니다.
+      꼭짓점 데이터를 비롯한 많은 값의 경우 GPU 측 메모리는 GPUBuffer 객체를 통해 관리됩니다.
+      https://gpuweb.github.io/gpuweb/#gpubuffer
+      GPUBuffer는 GPU에서 사용할 수 있는 메모리 블록을 나타냅니다.  TypedArray와 약간 비슷
+      GPUBuffer는 일반적으로 CPU에서 GPU로 데이터를 전송하는 데 사용됩니다.
+      반환되는 버퍼 객체는 불투명하므로 보유하고 있는 데이터를 (쉽게) 검사할 수 없습니다. 또한 대부분의 속성은 변경할 수 없습니다. 
+      GPUBuffer를 만든 후에는 크기를 조절할 수 없으며 사용 플래그를 변경할 수도 없습니다
+      버퍼가 처음 생성되면 여기에 포함된 메모리는 0으로 초기화됩니다. 
+      */
+      const vertexBuffer = device.createBuffer({
+        // WebGPU에서 발생하는 오류 메시지에 문제가 무엇인지 이해하는 데 도움이 됩니다.
+        label: "ㅋㄷㅋㄷ Cell vertices",
+        // 버퍼 크기를 바이트 단위로 지정합니다
+        // 48바이트의 버퍼가 필요하며 32비트 부동 크기 ( 4바이트)에 vertices 배열의 부동 소수점 수 (12)를 곱하여 결정합니다.
+        // 다행히 TypedArray에서 이미 byteLength를 계산하므로 버퍼를 만들 때 이를 사용할 수 있습니다.
+        size: vertices.byteLength,
+        // 여러 플래그가 | ( 비트별 OR) 연산자와 결합됩니다.
+        // 버퍼를 버텍스 데이터 (GPUBufferUsage.VERTEX)에 사용하고 데이터를 버텍스에 복사 (GPUBufferUsage.COPY_DST)할 수 있도록 지정합니다
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      // 콘텐츠를 변경하는 방법에는 여러 가지가 있지만 가장 쉬운 방법은 복사하려는 TypedArray를 사용하여
+      // 꼭짓점 데이터를 버퍼의 메모리에 복사하려면 다음 코드를 추가합니다.
+      device.queue.writeBuffer(vertexBuffer, 0, vertices);
+
+      //  꼭짓점 데이터의 구조에 관한 자세한 정보를 WebGPU에 알려줄 수 있어야 합니다.
+      const vertexBufferLayout = {
+        // GPU가 다음 꼭짓점을 찾을 때 버퍼에서 앞으로 건너뛰어야 하는 바이트 수
+        // 정사각형의 각 꼭짓점은 32비트 부동 소수점 수 2개로 구성됩니다.
+        // 앞서 언급했듯이 32비트 부동 소수점 수는 4바이트이므로 두 부동 소수점 수는 8바이트입니다.
+        arrayStride: 8,
+        // 각 꼭짓점으로 인코딩된 개별 정보입니다.
+        attributes: [
+          {
+            // 꼭짓점에는 각각 2개의 32비트 부동 소수점이 있으므로 float32x2 형식을 사용합니다.
+            // 예를 들어 꼭짓점 데이터가 각각 4개의 부호 없는 16비트 정수로 구성된 경우, 대신 uint16x4을 사용합니다. 패턴이 보이나요?
+            format: "float32x2",
+            //  특정 속성이 시작하는 꼭짓점에 포함된 바이트 수를 설명합니다. 버퍼에 속성이 두 개 이상 있을 때만 이 문제를 걱정하면 되
+            offset: 0,
+            // . 0에서 15 사이의 숫자여야 하며 정의한 모든 속성에 대해 고유해야 합니다. 이 속성은 버텍스 셰이더의 특정 입력에 연결됩니다.
+            shaderLocation: 0, // Position. Matches @location(0) in the @vertex shader.
+          },
+        ],
+      };
+
+      // Create the bind group layout and pipeline layout.
+      const bindGroupLayout = device.createBindGroupLayout({
+        label: "Cell Bind Group Layout",
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE,
+            buffer: {}, // Grid uniform buffer
+          },
+          {
+            binding: 1,
+            visibility: GPUShaderStage.VERTEX | GPUShaderStage.COMPUTE,
+            buffer: { type: "read-only-storage" }, // Cell state input buffer
+          },
+          {
+            binding: 2,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: { type: "storage" }, // Cell state output buffer
+          },
+        ],
+      });
+
+      const pipelineLayout = device.createPipelineLayout({
+        label: "Cell Pipeline Layout",
+        bindGroupLayouts: [bindGroupLayout],
+      });
+
+      // Create the shader that will render the cells.
+      // 이제 렌더링하려는 데이터가 생겼지만 이를 어떻게 처리할지 정확히 GPU에 알려야 합니다.
+      // 셰이더는 개발자가 작성하고 GPU에서 실행하는 소규모 프로그램입니다
+      // WebGPU의 셰이더는 WGSL (WebGPU 셰이딩 언어)이라는 음영 언어로 작성됩니다.
+      const cellShaderModule = device.createShaderModule({
+        label: "Cell shader",
+        /*
+버텍스 셰이더부터 GPU가 시작
+vertexBuffer에는 6개의 위치 (정점)가 있으므로 정의한 함수는 6번 호출됩니다.
+호출될 때마다 vertexBuffer의 다른 위치가 함수에 인수로 전달되며
+꼭짓점 셰이더 함수의 기능이 클립 공간에 해당하는 위치를 반환합니다.
+@location(0) : shaderLocation(0)과 일치
+WGSL: https://www.w3.org/TR/WGSL/
+vec4f(x, y, z, w), w 값은 3차원 동종 꼭짓점의 네 번째 구성요소입니다. 4x4 행렬이 포함된 수학
+정적 값 (0, 0, 0, 1)를 반환하면 기술적으로 유효한 꼭짓점 셰이더가 있습니다.
+GPU가 생성하는 삼각형이 한 점일 뿐이라는 것을 인식하여 아무것도 표시되지 않으므로 아무것도 표시하지 않는 버텍스 셰이더가 있습니다
+. 위치는 2D 벡터이고 반환 유형은 4D 벡터이므로 약간 변경해야 합니다. -> return vec4f(pos.x, pos.y, 0, 1);
+
+
+프래그먼트 셰이더는 버텍스 셰이더와 매우 유사한 방식으로 작동하지만, 
+모든 버텍스에 대해 호출되는 대신 그려진 모든 픽셀에 대해 호출됩니다.
+프래그먼트 셰이더는 항상 꼭짓점 셰이더 다음에 호출됩니다. 
+
+GPU가 꼭짓점 셰이더의 출력을 가져와 삼각 측량하여 세 점 집합에서 삼각형을 만듭니다. 
+이러한 삼각형에 어떤 출력 색상 첨부파일이 포함되어 있는지 찾아 이러한 각 삼각형을 래스터화한 다음, 
+각 픽셀에 프래그먼트 셰이더를 한 번 호출합니다.
+프래그먼트 셰이더는 일반적으로 꼭짓점 셰이더에서 전송된 값과 
+GPU가 색상 첨부파일에 쓰는 텍스처 같은 애셋으로 전송된 값을 반환합니다.
+대규모로 병렬 방식으로 실행됩니다.
+각 삼각형의 각 픽셀에 하나의 색상을 반환하는 것으로 고려할 수 있습니다.
+첨부파일이 한 개만 있으므로 위치는 0입니다.
+반환된 벡터의 네 가지 구성요소는 RGBA 색상 값입니다.
+        */
+        code: `
+        struct VertexOutput {
+            @builtin(position) position: vec4f,
+            @location(0) cell: vec2f,
+          };
+
+          // 균일 버퍼에 복사한 배열과 일치하는 2D 부동 벡터입니다. 
+          // 또한 유니폼이 @group(0) 및 @binding(0)에 바인딩되도록 지정합니다.
+          @group(0) @binding(0) var<uniform> grid: vec2f;
+          @group(0) @binding(1) var<storage> cellState: array<u32>;
+
+          @vertex
+          fn vertexMain(@location(0) position: vec2f,
+                        @builtin(instance_index) instance: u32) -> VertexOutput {
+            var output: VertexOutput;
+
+            let i = f32(instance);
+            let cell = vec2f(i % grid.x, floor(i / grid.x));
+
+            let scale = f32(cellState[instance]);
+            let cellOffset = cell / grid * 2;
+            let gridPos = (position*scale+1) / grid - 1 + cellOffset;
+
+            output.position = vec4f(gridPos, 0, 1);
+            output.cell = cell / grid;
+            return output;
+          }
+
+          @fragment
+          fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+            return vec4f(input.cell, 1.0 - input.cell.x, 1);
+          }
+        `,
+      });
+
+      // Create a pipeline that renders the cell.
+      const cellPipeline = device.createRenderPipeline({
+        label: "Cell pipeline",
+        layout: pipelineLayout,
+        vertex: {
+          module: cellShaderModule,
+          entryPoint: "vertexMain",
+          buffers: [vertexBufferLayout],
+        },
+        fragment: {
+          module: cellShaderModule,
+          entryPoint: "fragmentMain",
+          targets: [
+            {
+              format: canvasFormat,
+            },
+          ],
+        },
+      });
+
+      // Create the compute shader that will process the game of life simulation.
+      const simulationShaderModule = device.createShaderModule({
+        label: "Life simulation shader",
+        code: `
+          @group(0) @binding(0) var<uniform> grid: vec2f;
+
+          @group(0) @binding(1) var<storage> cellStateIn: array<u32>;
+          @group(0) @binding(2) var<storage, read_write> cellStateOut: array<u32>;
+
+          fn cellIndex(cell: vec2u) -> u32 {
+            return (cell.y % u32(grid.y)) * u32(grid.x) +
+                   (cell.x % u32(grid.x));
+          }
+
+          fn cellActive(x: u32, y: u32) -> u32 {
+            return cellStateIn[cellIndex(vec2(x, y))];
+          }
+
+          @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+          fn computeMain(@builtin(global_invocation_id) cell: vec3u) {
+            // Determine how many active neighbors this cell has.
+            let activeNeighbors = cellActive(cell.x+1, cell.y+1) +
+                                  cellActive(cell.x+1, cell.y) +
+                                  cellActive(cell.x+1, cell.y-1) +
+                                  cellActive(cell.x, cell.y-1) +
+                                  cellActive(cell.x-1, cell.y-1) +
+                                  cellActive(cell.x-1, cell.y) +
+                                  cellActive(cell.x-1, cell.y+1) +
+                                  cellActive(cell.x, cell.y+1);
+
+            let i = cellIndex(cell.xy);
+
+            // Conway's game of life rules:
+            switch activeNeighbors {
+              case 2: { // Active cells with 2 neighbors stay active.
+                cellStateOut[i] = cellStateIn[i];
+              }
+              case 3: { // Cells with 3 neighbors become or stay active.
+                cellStateOut[i] = 1;
+              }
+              default: { // Cells with < 2 or > 3 neighbors become inactive.
+                cellStateOut[i] = 0;
+              }
+            }
+          }
+        `,
+      });
+
+      // Create a compute pipeline that updates the game state.
+      const simulationPipeline = device.createComputePipeline({
+        label: "Simulation pipeline",
+        layout: pipelineLayout,
+        compute: {
+          module: simulationShaderModule,
+          entryPoint: "computeMain",
+        },
+      });
+
+      // Create a uniform buffer that describes the grid.
+      const uniformArray = new Float32Array([GRID_SIZE, GRID_SIZE]);
+      const uniformBuffer = device.createBuffer({
+        label: "Grid Uniforms",
+        size: uniformArray.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
+
+      // Create an array representing the active state of each cell.
+      const cellStateArray = new Uint32Array(GRID_SIZE * GRID_SIZE);
+
+      // Create two storage buffers to hold the cell state.
+      const cellStateStorage = [
+        device.createBuffer({
+          label: "Cell State A",
+          size: cellStateArray.byteLength,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        }),
+        device.createBuffer({
+          label: "Cell State B",
+          size: cellStateArray.byteLength,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        }),
+      ];
+
+      // Set each cell to a random state, then copy the JavaScript array into
+      // the storage buffer.
+      for (let i = 0; i < cellStateArray.length; ++i) {
+        cellStateArray[i] = Math.random() > 0.6 ? 1 : 0;
+      }
+      device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArray);
+
+      // Create a bind group to pass the grid uniforms into the pipeline
+      /*
+      셰이더에서 유니폼을 선언하더라도 개발자가 만든 버퍼와 연결되지는 않습니다. 
+      Create a bind group to pass the grid uniforms into the pipeline
+      바인딩 그룹은 셰이더에 동시에 액세스할 수 있게 하려는 리소스의 모음입니다.
+      균일 버퍼와 같은 여러 유형의 버퍼와 여기에서 다루지는 않지만 WebGPU 렌더링 기술의 일반적인 부분인 
+      텍스처, 샘플러와 같은 기타 리소스가 포함될 수 있습니다.
+      균일 버퍼 및 렌더링 파이프라인을 만든 후 다음 코드를 추가하여 균일 버퍼로 결합 그룹을 만듭니다.
+      이 함수는 변경 불가능한 불투명한 핸들인 GPUBindGroup를 반환합니다. 
+      https://gpuweb.github.io/gpuweb/#gpubindgroup
+      */
+      const bindGroups = [
+        device.createBindGroup({
+          label: "Cell renderer bind group A",
+          layout: bindGroupLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: uniformBuffer },
+            },
+            {
+              binding: 1,
+              resource: { buffer: cellStateStorage[0] },
+            },
+            {
+              binding: 2,
+              resource: { buffer: cellStateStorage[1] },
+            },
+          ],
+        }),
+        device.createBindGroup({
+          label: "Cell renderer bind group B",
+          layout: bindGroupLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: uniformBuffer },
+            },
+            {
+              binding: 1,
+              resource: { buffer: cellStateStorage[1] },
+            },
+            {
+              binding: 2,
+              resource: { buffer: cellStateStorage[0] },
+            },
+          ],
+        }),
+      ];
+
+      let step = 0;
+      function updateGrid() {
+        // https://gpuweb.github.io/gpuweb/#gpucommandencoder
+        const encoder = device.createCommandEncoder();
+
+        // Start a compute pass
+        const computePass = encoder.beginComputePass();
+
+        computePass.setPipeline(simulationPipeline);
+        computePass.setBindGroup(0, bindGroups[step % 2]);
+        const workgroupCount = Math.ceil(GRID_SIZE / WORKGROUP_SIZE);
+        computePass.dispatchWorkgroups(workgroupCount, workgroupCount);
+        computePass.end();
+
+        step++; // Increment the step count
+
+        /* 
+      렌더 패스는 WebGPU의 모든 그리기 작업이 발생하는 것을 말합니다. 
+      각 컨트롤은 beginRenderPass() 호출로 시작하며, 
+      이 메서드는 실행된 그리기 명령어의 출력을 수신하는 텍스처를 정의합니다. 
+      고급 사용에서는 렌더링된 도형의 깊이를 저장하거나 앤티앨리어싱을 제공하는 등 
+      다양한 목적으로 첨부파일이라고 하는 여러 텍스처를 제공할 수 있습니다. 
+      하지만 이 앱에는 하나만 필요합니다.
+      context.getCurrentTexture()를 호출하여 이전에 만든 캔버스 컨텍스트에서 텍스처를 가져옵니다. 
+      이 메서드는 캔버스의 width 및 height 속성과 일치하는 픽셀 너비 및 높이, 
+      context.configure()를 호출할 때 지정된 format를 포함하는 텍스처를 반환합니다.      
+    */
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              // 텍스처는 colorAttachment의 view 속성으로 제공됩니다.
+              // 렌더 패스를 사용하려면 GPUTexture 대신 GPUTextureView를 제공해야 합니다.
+              //  텍스처에 인수가 없는 createView()를 호출하여 렌더 패스에서 전체 텍스처를 사용하려고 한다는 것을 나타냅니다.
+              view: context.getCurrentTexture().createView(),
+              // 이면 렌더 패스가 시작될 때 텍스처를 지울 것임을 나타냅니다.
+              loadOp: "clear",
+              /* 
+            실행할 때 어떤 색상을 사용해야 할지 렌더 패스에 지시합니다.
+            { r: 1, g: 0, b: 0, a: 1 }는 밝은 빨간색입니다.
+            { r: 1, g: 0, b: 1, a: 1 }는 밝은 보라색입니다.
+            { r: 0, g: 0.3, b: 0, a: 1 }는 진한 녹색입니다.
+            { r: 0.5, g: 0.5, b: 0.5, a: 1 }는 중간 회색입니다.
+            { r: 0, g: 0, b: 0, a: 0 }는 기본적으로 투명한 검은색입니다.
+          */
+              clearValue: { r: 0, g: 0, b: 0.4, a: 1.0 },
+              // 렌더 패스가 완료되면 렌더 패스 중에 그리는 결과가 텍스처에 저장된다는 의미입니다.
+              storeOp: "store",
+            },
+          ],
+        });
+
+        // Draw the grid.
+        pass.setPipeline(cellPipeline);
+        pass.setBindGroup(0, bindGroups[step % 2]); // Updated!
+        pass.setVertexBuffer(0, vertexBuffer);
+        // 인스턴싱은 GPU에 한 번의 draw 호출로 동일한 도형의 여러 사본을 그리도록 하는 방법입니다.
+        // GPU에 사각형을 채울 수 있는 충분한 인스턴스 수를 GPU에 알리려면
+        pass.draw(vertices.length / 2, GRID_SIZE * GRID_SIZE);
+
+        // End the render pass and submit the command buffer
+        pass.end();
+        //  브라우저에서 컨텍스트의 현재 텍스처가 변경되었음을 확인한 다음
+        //  캔버스를 업데이트하여 해당 텍스처를 이미지로 표시합니다.
+        //  캔버스 콘텐츠를 다시 업데이트하려면 새 명령어 버퍼를 기록하고 제출하여
+        //  context.getCurrentTexture()를 다시 호출하여 렌더 패스의 새 텍스처를 가져와야 합니다.
+        device.queue.submit([encoder.finish()]);
+      }
+      setInterval(updateGrid, UPDATE_INTERVAL);
+    </script>
+  </body>
+</html>

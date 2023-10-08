@@ -1,2 +1,4 @@
+- https://www.w3.org/TR/WGSL/
 - https://codelabs.developers.google.com/your-first-webgpu-app?hl=ko#3
-- https://glitch.com/edit/#!/your-first-webgpu-app
+- https://glitch.com/edit/#!/your-first-webgpu-app?path=05-game-simulation.html%3A301%3A7
+- https://github.com/gpuweb/types

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>03: Grid of Squares - WebGPU Life</title>
+  </head>
+  <body>
+    <canvas width="512" height="512"></canvas>
+    <script type="module">
+      //  그리드 크기를 4x4로 설정합니다
+      const GRID_SIZE = 4;
+
+      const canvas = document.querySelector("canvas");
+
+      // WebGPU device initialization
+      if (!navigator.gpu) {
+        throw new Error("WebGPU not supported on this browser.");
+      }
+
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        throw new Error("No appropriate GPUAdapter found.");
+      }
+
+      const device = await adapter.requestDevice();
+
+      // Canvas configuration
+      const context = canvas.getContext("webgpu");
+      const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+      context.configure({
+        device: device,
+        format: canvasFormat,
+      });
+
+      // Create a buffer with the vertices for a single cell.
+      const vertices = new Float32Array([
+        -0.8, -0.8, 0.8, -0.8, 0.8, 0.8,
+
+        -0.8, -0.8, 0.8, 0.8, -0.8, 0.8,
+      ]);
+      const vertexBuffer = device.createBuffer({
+        label: "Cell vertices",
+        size: vertices.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(vertexBuffer, 0, vertices);
+
+      const vertexBufferLayout = {
+        arrayStride: 8,
+        attributes: [
+          {
+            format: "float32x2",
+            offset: 0,
+            shaderLocation: 0, // Position. Matches @location(0) in the @vertex shader.
+          },
+        ],
+      };
+
+      // Create the shader that will render the cells.
+      const cellShaderModule = device.createShaderModule({
+        label: "Cell shader",
+        /*
+        꼭짓점 위치를 그리드 벡터로 나눕니다
+        vec4f(pos / grid, 0, 1):  vec2f(pos.x / grid.x, pos.y / grid.y, 0, 1)와 동일합니다.
+        이 경우 그리드 크기 4를 사용한 경우 렌더링하는 정사각형은 원래 크기의 4분의 1이 됩니다. 
+        이 중 4개를 행 또는 열에 맞추려는 경우에 적합합니다.
+        */
+        code: `
+          struct VertexOutput {
+            @builtin(position) position: vec4f,
+            @location(0) cell: vec2f,
+          };
+          // 균일 버퍼에 복사한 배열과 일치하는 2D 부동 벡터입니다. 
+          // 또한 유니폼이 @group(0) 및 @binding(0)에 바인딩되도록 지정합니다.
+          @group(0) @binding(0) var<uniform> grid: vec2f;
+          
+          @vertex
+          fn vertexMain(@location(0) position: vec2f,
+                        @builtin(instance_index) instance: u32) -> VertexOutput {
+            // instance_index는 셰이더 로직의 일부로 사용할 수 있는 0에서 number of instances - 1 사이의 부호 없는 32비트 숫자입니다.             
+            // 버텍스 셰이더는 버텍스 버퍼의 각 위치에 한 번씩 0의 instance_index로 6번 호출됩니다. 
+            // 동일한 인스턴스에 속하는 처리되는 꼭짓점마다 값이 동일합니다.
+            let i = f32(instance);
+            let cell = vec2f(i % grid.x, floor(i / grid.x));
+            // 캔버스 좌표가 -1에서 +1로 변하기 때문에 실제로는 2단위가 됩니다. 
+            // 즉, 꼭짓점을 캔버스의 4분의 1 위치로 이동하려면 0.5 단위로 이동해야 합니다. 
+            let cellOffset = cell / grid * 2;
+            let gridPos = (position+1) / grid - 1 + cellOffset;
+
+            var output: VertexOutput;
+            output.position = vec4f(gridPos, 0, 1);
+            output.cell = cell;
+            return output;
+          }
+
+          @fragment
+          fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+            let c = input.cell / grid;
+            return vec4f(c, 1-c.x, 1);
+          }
+        `,
+      });
+
+      // Create a pipeline that renders the cell.
+      const cellPipeline = device.createRenderPipeline({
+        label: "Cell pipeline",
+        layout: "auto",
+        vertex: {
+          module: cellShaderModule,
+          entryPoint: "vertexMain",
+          buffers: [vertexBufferLayout],
+        },
+        fragment: {
+          module: cellShaderModule,
+          entryPoint: "fragmentMain",
+          targets: [
+            {
+              format: canvasFormat,
+            },
+          ],
+        },
+      });
+
+      // Create a uniform buffer that describes the grid.
+      // 유니폼은 모든 호출에서 동일한 버퍼의 값입니다.
+      const uniformArray = new Float32Array([GRID_SIZE, GRID_SIZE]);
+      const uniformBuffer = device.createBuffer({
+        label: "Grid Uniforms",
+        size: uniformArray.byteLength,
+        // 주요 차이점은 이번에는 usage에 GPUBufferUsage.VERTEX 대신 GPUBufferUsage.UNIFORM가 포함되어 있다는 점입니다.
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      device.queue.writeBuffer(uniformBuffer, 0, uniformArray);
+
+      /*
+      셰이더에서 유니폼을 선언하더라도 개발자가 만든 버퍼와 연결되지는 않습니다. 
+      Create a bind group to pass the grid uniforms into the pipeline
+      바인딩 그룹은 셰이더에 동시에 액세스할 수 있게 하려는 리소스의 모음입니다.
+      균일 버퍼와 같은 여러 유형의 버퍼와 여기에서 다루지는 않지만 WebGPU 렌더링 기술의 일반적인 부분인 
+      텍스처, 샘플러와 같은 기타 리소스가 포함될 수 있습니다.
+      균일 버퍼 및 렌더링 파이프라인을 만든 후 다음 코드를 추가하여 균일 버퍼로 결합 그룹을 만듭니다.
+      이 함수는 변경 불가능한 불투명한 핸들인 GPUBindGroup를 반환합니다. 
+      https://gpuweb.github.io/gpuweb/#gpubindgroup
+      */
+
+      const bindGroup = device.createBindGroup({
+        label: "Cell renderer bind group",
+        // 바인딩 그룹에 포함된 리소스 유형을 설명 layout: "auto"
+        // getBindGroupLayout(0)에 요청합니다. 여기서 0는 셰이더에 입력한 @group(0)에 해당합니다.
+        layout: cellPipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            // binding: 셰이더에 입력한 @binding() 값에 해당합니다. 이 경우는 0입니다.
+            binding: 0,
+            // 지정된 결합 색인의 변수에 노출하려는 실제 리소스입니다. 이 경우 균일 버퍼입니다.
+            resource: { buffer: uniformBuffer },
+          },
+        ],
+      });
+
+      // Clear the canvas with a render pass
+      const encoder = device.createCommandEncoder();
+      // bindGroup to use for this render pass
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            loadOp: "clear",
+            clearValue: { r: 0, g: 0, b: 0.4, a: 1.0 },
+            storeOp: "store",
+          },
+        ],
+      });
+
+      // Draw the square.
+      // 첫 번째 인수로 전달된 0는 셰이더 코드의 @group(0)에 해당합니다.
+      // @group(0)의 일부인 각 @binding가 이 바인딩 그룹의 리소스를 사용한다는 의미입니다.
+      pass.setPipeline(cellPipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.setVertexBuffer(0, vertexBuffer);
+
+      // Draw enough cells to fill the grid
+      // 인스턴싱은 GPU에 한 번의 draw 호출로 동일한 도형의 여러 사본을 그리도록 하는 방법입니다.
+      // GPU에 사각형을 채울 수 있는 충분한 인스턴스 수를 GPU에 알리려면
+      const instanceCount = GRID_SIZE * GRID_SIZE;
+      pass.draw(vertices.length / 2, instanceCount);
+
+      pass.end();
+
+      device.queue.submit([encoder.finish()]);
+    </script>
+  </body>
+</html>
